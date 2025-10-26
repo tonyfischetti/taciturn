@@ -121,14 +121,14 @@ export class TacitPromise<T, C extends Record<string, any> = Record<string, any>
   /* conditional execution */
   when(
     predicate: (value: T, ctx: C) => boolean | PromiseLike<boolean>,
-    fn: (value: T, ctx: C) => T | PromiseLike<T>
+    fn: (value: T, ctx: C) => void | PromiseLike<void>
   ): TacitPromise<T, C> {
     return this.then(async (value, ctx) => {
       const condition = await predicate(value, ctx);
       if (condition) {
-        return fn(value, ctx);
+        await fn(value, ctx);
       }
-      return value;
+      return value;  // Always return original value
     });
   }
 

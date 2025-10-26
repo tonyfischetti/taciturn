@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { TacitPromise } from '../src';
 
 describe('TacitPromise', () => {
@@ -174,76 +174,142 @@ describe('TacitPromise - map', () => {
 });
 
 describe('TacitPromise - when', () => {
-  it('should execute function when predicate is true', async () => {
+  it('should pass through value even when condition is true', async () => {
+    const sideEffect = vi.fn();
+    
     const result = await TacitPromise.begin(10)
       .when(
         (val) => val > 5,
-        (val) => val * 2
+        (val) => { sideEffect(val); }
       )
       .getValue();
 
-    expect(result).toBe(20);
+    expect(result).toBe(10);  // Original value
+    expect(sideEffect).toHaveBeenCalledWith(10);
   });
 
-  it('should skip function when predicate is false', async () => {
+  it('should pass through value when condition is false', async () => {
+    const sideEffect = vi.fn();
+    
     const result = await TacitPromise.begin(3)
       .when(
         (val) => val > 5,
-        (val) => val * 2
+        (val) => { sideEffect(val); }
       )
       .getValue();
 
-    expect(result).toBe(3); // Unchanged
+    expect(result).toBe(3);  // Original value
+    expect(sideEffect).not.toHaveBeenCalled();
   });
 
   it('should allow access to context in predicate', async () => {
+    const sideEffect = vi.fn();
+
     const result = await TacitPromise.create({ debug: true })
       .then(() => 10)
       .when(
         (_, ctx) => ctx.debug,
-        (val) => val * 100
-      )
-      .getValue();
-
-    expect(result).toBe(1000);
-  });
-
-  it('should allow access to context in function', async () => {
-    const result = await TacitPromise.create({ multiplier: 5 })
-      .then(() => 10)
-      .when(
-        (val) => val > 5,
-        (val, ctx) => val * ctx.multiplier
-      )
-      .getValue();
-
-    expect(result).toBe(50);
-  });
-
-  it('should chain multiple whens', async () => {
-    const result = await TacitPromise.begin(5)
-      .when(
-        (val) => val < 10,
-        (val) => val + 10
-      )
-      .when(
-        (val) => val > 10,
-        (val) => val * 2
-      )
-      .getValue();
-
-    expect(result).toBe(30); // 5 + 10 = 15, then 15 * 2 = 30
-  });
-
-  it('should handle promises returned from when', async () => {
-    const result = await TacitPromise.begin(5)
-      .when(
-        (val) => val > 0,
-        (val) => Promise.resolve(val * 2)
+        (val) => { sideEffect(val); }
       )
       .getValue();
 
     expect(result).toBe(10);
+    expect(sideEffect).toHaveBeenCalledWith(10);
+  });
+
+  it('should allow access to context in function', async () => {
+    const { value, context } = await TacitPromise.create<any>({ multiplier: 5 })
+      .then(() => 10)
+      .when(
+        (val) => val > 5,
+        (val, ctx) => { ctx.result = val * ctx.multiplier; }
+      )
+      .toObject();
+
+    expect(value).toBe(10);  // Original value
+    expect(context.result).toBe(50);  // Side effect in context
+  });
+
+  it('should handle async side effects', async () => {
+    let effectRan = false;
+    
+    const asyncSideEffect = async (val: number) => {
+      await new Promise(resolve => setTimeout(resolve, 10));
+      effectRan = true;
+    };
+
+    const result = await TacitPromise.begin(10)
+      .when((val) => val > 5, asyncSideEffect)
+      .getValue();
+
+    expect(result).toBe(10);
+    expect(effectRan).toBe(true);
+  });
+
+  it('should handle async predicates', async () => {
+    const sideEffect = vi.fn();
+    
+    const asyncCheck = async (val: number) => {
+      await new Promise(resolve => setTimeout(resolve, 10));
+      return val > 5;
+    };
+
+    const result = await TacitPromise.begin(10)
+      .when(asyncCheck, (val) => { sideEffect(val); })
+      .getValue();
+
+    expect(result).toBe(10);
+    expect(sideEffect).toHaveBeenCalledWith(10);
+  });
+
+  it('should handle async predicates that return false', async () => {
+    const sideEffect = vi.fn();
+    
+    const asyncCheck = async (val: number) => {
+      await new Promise(resolve => setTimeout(resolve, 10));
+      return val > 5;
+    };
+
+    const result = await TacitPromise.begin(3)
+      .when(asyncCheck, (val) => { sideEffect(val); })
+      .getValue();
+
+    expect(result).toBe(3);
+    expect(sideEffect).not.toHaveBeenCalled();
+  });
+
+  it('should handle async predicates with async side effects', async () => {
+    let effectRan = false;
+    
+    const asyncCheck = async (val: number) => {
+      await new Promise(resolve => setTimeout(resolve, 5));
+      return val > 5;
+    };
+    
+    const asyncSideEffect = async () => {
+      await new Promise(resolve => setTimeout(resolve, 5));
+      effectRan = true;
+    };
+
+    const result = await TacitPromise.begin(10)
+      .when(asyncCheck, asyncSideEffect)
+      .getValue();
+
+    expect(result).toBe(10);
+    expect(effectRan).toBe(true);
+  });
+
+  it('should allow context modification in side effect', async () => {
+    const { value, context } = await TacitPromise.create<any>({ count: 0 })
+      .then(() => 'test')
+      .when(
+        (val) => val === 'test',
+        (_, ctx) => { ctx.count++; }
+      )
+      .toObject();
+
+    expect(value).toBe('test');  // Original value
+    expect(context.count).toBe(1);  // Context modified
   });
 });
 
@@ -404,11 +470,88 @@ describe('TacitPromise - mapcar', () => {
   });
 });
 
+describe('TacitPromise - extract', () => {
+  it('should extract value from context', async () => {
+    const result = await TacitPromise.create({ userId: 123, name: 'Alice' })
+      .extract('userId')
+      .getValue();
+
+    expect(result).toBe(123);
+  });
+
+  it('should extract different types', async () => {
+    const result = await TacitPromise.create({ 
+      name: 'Alice', 
+      age: 30,
+      active: true 
+    })
+      .extract('name')
+      .getValue();
+
+    expect(result).toBe('Alice');
+  });
+
+  it('should allow chaining after extract', async () => {
+    const result = await TacitPromise.create({ count: 5 })
+      .extract('count')
+      .map(x => x * 2)
+      .getValue();
+
+    expect(result).toBe(10);
+  });
+
+  it('should preserve context after extract', async () => {
+    const { value, context } = await TacitPromise.create({ x: 1, y: 2 })
+      .extract('x')
+      .then((val, ctx) => {
+        ctx.z = 3;
+        return val;
+      })
+      .toObject();
+
+    expect(value).toBe(1);
+    expect(context).toEqual({ x: 1, y: 2, z: 3 });
+  });
+
+  it('should work in pipelines', async () => {
+    const result = await TacitPromise.create({ 
+      root: '/tmp',
+      filename: 'test.txt' 
+    })
+      .extract('root')
+      .map(root => `${root}/data`)
+      .then((path, ctx) => `${path}/${ctx.filename}`)
+      .getValue();
+
+    expect(result).toBe('/tmp/data/test.txt');
+  });
+
+  it('should extract and use in filter', async () => {
+    const result = await TacitPromise.create({ minAge: 25 })
+      .then(() => [
+        { name: 'Alice', age: 30 },
+        { name: 'Bob', age: 20 },
+        { name: 'Charlie', age: 28 }
+      ])
+      .tap('users')
+      .extract('minAge')
+      .then((minAge, ctx) => {
+        return ctx.users.filter((u: any) => u.age >= minAge);
+      })
+      .getValue();
+
+    expect(result).toEqual([
+      { name: 'Alice', age: 30 },
+      { name: 'Charlie', age: 28 }
+    ]);
+  });
+});
+
 describe('TacitPromise - integration tests', () => {
   it('should combine tap, filter, and mapcar', async () => {
     interface FileContext {
-      totalFiles?: number;
-      filteredCount?: number;
+      totalFiles?: any;
+      filteredCount?: any;
     }
 
     const { value, context } = await TacitPromise.create<FileContext>({})
@@ -424,17 +567,20 @@ describe('TacitPromise - integration tests', () => {
     expect(value).toEqual(['FILE1.JS', 'FILE3.JS']);
   });
 
-  it('should use when with map for conditional transformation', async () => {
+  it('should use when with map for conditional side effects', async () => {
+    const sideEffect = vi.fn();
+
     const result = await TacitPromise.create({ uppercase: true })
       .then(() => 'hello')
       .when(
         (_, ctx) => ctx.uppercase,
-        (val) => val.toUpperCase()
+        (val) => { sideEffect(val.toUpperCase()); }
       )
       .map((val) => `${val}!`)
       .getValue();
 
-    expect(result).toBe('HELLO!');
+    expect(result).toBe('hello!');
+    expect(sideEffect).toHaveBeenCalledWith('HELLO');
   });
 
   it('should build a processing pipeline', async () => {
@@ -460,114 +606,63 @@ describe('TacitPromise - integration tests', () => {
     expect(context.transformed).toEqual(['item-6', 'item-7', 'item-8', 'item-9', 'item-10']);
     expect(value).toBe('item-6, item-7, item-8, item-9, item-10');
   });
-});
 
-describe('TacitPromise - extract', () => {
-  it('should extract value from context', async () => {
-    const result = await TacitPromise.create({ userId: 123, name: 'Alice' })
-      .extract('userId')
+  it('should combine extract and when for path operations', async () => {
+    const fileRemoved = vi.fn();
+
+    const result = await TacitPromise.create({ 
+      root: '/tmp',
+      dbName: 'test.db' 
+    })
+      .extract('root')
+      .then((root, ctx) => `${root}/${ctx.dbName}`)  // Access dbName from context
+      .when(
+        (path) => path.endsWith('.db'),
+        (path) => { fileRemoved(path); }
+      )
       .getValue();
 
-    expect(result).toBe(123);
+    expect(result).toBe('/tmp/test.db');
+    expect(fileRemoved).toHaveBeenCalledWith('/tmp/test.db');
   });
 
-  it('should allow chaining after extract', async () => {
-    const result = await TacitPromise.create({ count: 5 })
-      .extract('count')
-      .map(x => x * 2)
-      .getValue();
+  it('should handle real-world codex-like pipeline', async () => {
+    interface CodexContext {
+      codexRoot?: string;
+      dbPath?: string;
+      allFiles?: any[];
+      processedCount?: number;
+    }
 
-    expect(result).toBe(10);
-  });
+    const mockFiles = [
+      { name: 'file1.js', isFile: () => true },
+      { name: 'file2.txt', isFile: () => true },
+      { name: 'dir', isFile: () => false },
+      { name: 'file3.js', isFile: () => true },
+    ];
 
-  it('should preserve context', async () => {
-    const { value, context } = await TacitPromise.create({ x: 1, y: 2 })
-      .extract('x')
-      .then((val, ctx) => {
-        ctx.z = 3;
-        return val;
-      })
+    const { value, context } = await TacitPromise.create<CodexContext>({ 
+      codexRoot: '/tmp/codex' 
+    })
+      .extract('codexRoot')
+      .map(root => `${root}/codex.db`)
+      .tap('dbPath')
+      .extract('codexRoot')
+      .then(() => mockFiles)
+      .tap('allFiles')
+      .filter((file: any) => file.isFile())
+      .filter((file: any) => file.name.endsWith('.js'))
+      .when(
+        (files) => files.length > 0,
+        (files, ctx) => { ctx.processedCount = files.length; }
+      )
+      .mapcar((file: any) => file.name.toUpperCase())
       .toObject();
 
-    expect(value).toBe(1);
-    expect(context).toEqual({ x: 1, y: 2, z: 3 });
-  });
-});
-
-describe('TacitPromise - when (updated)', () => {
-  it('should execute function when predicate is true', async () => {
-    const result = await TacitPromise.begin(10)
-      .when(
-        (val) => val > 5,
-        (val) => val * 2
-      )
-      .getValue();
-
-    expect(result).toBe(20);
-  });
-
-  it('should skip function when predicate is false', async () => {
-    const result = await TacitPromise.begin(3)
-      .when(
-        (val) => val > 5,
-        (val) => val * 2
-      )
-      .getValue();
-
-    expect(result).toBe(3); // Unchanged
-  });
-
-  it('should handle async predicates', async () => {
-    const asyncCheck = async (val: number) => {
-      await new Promise(resolve => setTimeout(resolve, 10));
-      return val > 5;
-    };
-
-    const result = await TacitPromise.begin(10)
-      .when(asyncCheck, (val) => val * 2)
-      .getValue();
-
-    expect(result).toBe(20);
-  });
-
-  it('should handle async predicates that return false', async () => {
-    const asyncCheck = async (val: number) => {
-      await new Promise(resolve => setTimeout(resolve, 10));
-      return val > 5;
-    };
-
-    const result = await TacitPromise.begin(3)
-      .when(asyncCheck, (val) => val * 2)
-      .getValue();
-
-    expect(result).toBe(3); // Unchanged
-  });
-
-  it('should allow access to context in async predicate', async () => {
-    const pathExists = async (path: string) => {
-      await new Promise(resolve => setTimeout(resolve, 10));
-      return path === '/tmp/test';
-    };
-
-    const result = await TacitPromise.create({ testPath: '/tmp/test' })
-      .then(() => '/tmp/test')
-      .when(pathExists, () => 'file exists')
-      .getValue();
-
-    expect(result).toBe('file exists');
-  });
-
-  it('should handle async functions after async predicate', async () => {
-    const asyncCheck = async (val: number) => val > 5;
-    const asyncTransform = async (val: number) => {
-      await new Promise(resolve => setTimeout(resolve, 10));
-      return val * 2;
-    };
-
-    const result = await TacitPromise.begin(10)
-      .when(asyncCheck, asyncTransform)
-      .getValue();
-
-    expect(result).toBe(20);
+    expect(context.codexRoot).toBe('/tmp/codex');
+    expect(context.dbPath).toBe('/tmp/codex/codex.db');
+    expect(context.allFiles).toHaveLength(4);
+    expect(context.processedCount).toBe(2);
+    expect(value).toEqual(['FILE1.JS', 'FILE3.JS']);
   });
 });

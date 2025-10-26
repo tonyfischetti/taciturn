@@ -87,17 +87,17 @@ TacitPromise.begin(5)
 ```
 
 #### `.when(predicate, fn)`
-Conditionally execute function. Supports both sync and async predicates.
+Conditionally execute a side effect. The value is always passed through unchanged.
 ```javascript
-// Sync predicate
-TacitPromise.begin(10)
+// Conditional side effect
+TacitPromise.begin('/tmp/file.txt')
   .when(
-    (val) => val > 5,
-    (val) => val * 2
+    (path) => path.endsWith('.txt'),
+    (path) => console.log('Processing text file:', path)
   )
-  // Result: 20
+  .then(processFile)  // Still gets '/tmp/file.txt'
 
-// Async predicate
+// Async predicate and side effect
 const fileExists = async (path) => {
   try {
     await fs.stat(path);
@@ -107,23 +107,41 @@ const fileExists = async (path) => {
   }
 };
 
-TacitPromise.begin('/path/to/file')
-  .when(fileExists, (path) => fs.readFile(path))
-  // Only reads if file exists
+TacitPromise.begin('/tmp/old.db')
+  .when(fileExists, fs.rm)  // Remove if exists
+  .then(createNewDB)  // Still gets '/tmp/old.db'
 
-// With context
-TacitPromise.create({ debug: true })
-  .then(() => getData())
+// Modifying context
+TacitPromise.create({ processed: 0 })
+  .then(() => [1, 2, 3])
+  .tap('items')
   .when(
-    (_, ctx) => ctx.debug,
-    (data) => {
-      console.log('Debug:', data);
-      return data;
-    }
+    (items) => items.length > 0,
+    (items, ctx) => { ctx.processed = items.length; }
   )
+  .then((items, ctx) => {
+    console.log(`Processed ${ctx.processed} items`);
+    return items;
+  })
 ```
 
-The predicate can return either `boolean` or `Promise<boolean>`, making it flexible for both synchronous checks and async operations like file system checks or API calls.
+`.when()` is perfect for:
+- Conditional logging/debugging
+- Conditional cleanup (removing files, etc.)
+- Recording metrics in context
+- Any side effect that shouldn't change the value
+
+For conditional **transformations**, use `.then()` with an `if` statement:
+```javascript
+// Use .then() when you want to transform
+.then((val) => {
+  if (condition) {
+    return transform(val);
+  }
+  return val;
+})
+```
+
 
 #### `.extract(key)`
 Extract a value from context and make it the current value. Useful for switching focus from one context property to another.
