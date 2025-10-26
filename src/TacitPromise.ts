@@ -120,11 +120,12 @@ export class TacitPromise<T, C extends Record<string, any> = Record<string, any>
 
   /* conditional execution */
   when(
-    predicate: (value: T, ctx: C) => boolean,
+    predicate: (value: T, ctx: C) => boolean | PromiseLike<boolean>,
     fn: (value: T, ctx: C) => T | PromiseLike<T>
   ): TacitPromise<T, C> {
-    return this.then((value, ctx) => {
-      if (predicate(value, ctx)) {
+    return this.then(async (value, ctx) => {
+      const condition = await predicate(value, ctx);
+      if (condition) {
         return fn(value, ctx);
       }
       return value;
@@ -153,6 +154,10 @@ export class TacitPromise<T, C extends Record<string, any> = Record<string, any>
       }
       return value.map((item, i) => fn(item, i, ctx));
     });
+  }
+
+  extract<K extends keyof C>(key: K): TacitPromise<C[K], C> {
+    return this.then((_, ctx) => ctx[key]) as any;
   }
 
   /**

@@ -87,8 +87,31 @@ TacitPromise.begin(5)
 ```
 
 #### `.when(predicate, fn)`
-Conditionally execute function.
+Conditionally execute function. Supports both sync and async predicates.
 ```javascript
+// Sync predicate
+TacitPromise.begin(10)
+  .when(
+    (val) => val > 5,
+    (val) => val * 2
+  )
+  // Result: 20
+
+// Async predicate
+const fileExists = async (path) => {
+  try {
+    await fs.stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+TacitPromise.begin('/path/to/file')
+  .when(fileExists, (path) => fs.readFile(path))
+  // Only reads if file exists
+
+// With context
 TacitPromise.create({ debug: true })
   .then(() => getData())
   .when(
@@ -97,8 +120,54 @@ TacitPromise.create({ debug: true })
       console.log('Debug:', data);
       return data;
     }
-  );
+  )
 ```
+
+The predicate can return either `boolean` or `Promise<boolean>`, making it flexible for both synchronous checks and async operations like file system checks or API calls.
+
+#### `.extract(key)`
+Extract a value from context and make it the current value. Useful for switching focus from one context property to another.
+```javascript
+TacitPromise.create({ 
+  rootPath: '/tmp',
+  filename: 'data.txt' 
+})
+  .extract('rootPath')
+  .map(root => `${root}/output`)
+  .then((path, ctx) => `${path}/${ctx.filename}`)
+  // Result: '/tmp/output/data.txt'
+
+// Real-world example: processing paths
+TacitPromise.create({ 
+  codexRoot: '/projects/codex',
+  dbName: 'codex.db' 
+})
+  .extract('codexRoot')
+  .map(root => `${root}/data`)
+  .map(dir => `${dir}/codex.db`)
+  .then(createDatabase)
+  // Creates database at /projects/codex/data/codex.db
+  // while preserving full context
+
+// Chaining extracts
+TacitPromise.create({
+  users: [...],
+  minAge: 25,
+  country: 'US'
+})
+  .extract('users')
+  .filter((user, _, ctx) => user.age >= ctx.minAge)
+  .filter((user, _, ctx) => user.country === ctx.country)
+  // Filters users by both minAge and country from context
+```
+
+`extract()` is particularly useful when:
+- You need to switch focus to a specific context value
+- Building file paths from components stored in context
+- Extracting configuration values for processing
+- Working with accumulated results from earlier pipeline stages
+```
+
 
 #### `.filter(fn)`
 Filter array values.
@@ -107,6 +176,7 @@ TacitPromise.begin([1, 2, 3, 4, 5])
   .filter(x => x > 2)
   // [3, 4, 5]
 ```
+
 
 #### `.mapcar(fn)`
 Map over array values.

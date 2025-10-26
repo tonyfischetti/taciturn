@@ -1,6 +1,6 @@
 {
   "name": "taciturn",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Promises for tacit programming with implicit context threading",
   "type": "module",
   "main": "./dist/index.js",

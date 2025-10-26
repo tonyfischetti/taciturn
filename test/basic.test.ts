@@ -461,3 +461,113 @@ describe('TacitPromise - integration tests', () => {
     expect(value).toBe('item-6, item-7, item-8, item-9, item-10');
   });
 });
+
+describe('TacitPromise - extract', () => {
+  it('should extract value from context', async () => {
+    const result = await TacitPromise.create({ userId: 123, name: 'Alice' })
+      .extract('userId')
+      .getValue();
+
+    expect(result).toBe(123);
+  });
+
+  it('should allow chaining after extract', async () => {
+    const result = await TacitPromise.create({ count: 5 })
+      .extract('count')
+      .map(x => x * 2)
+      .getValue();
+
+    expect(result).toBe(10);
+  });
+
+  it('should preserve context', async () => {
+    const { value, context } = await TacitPromise.create({ x: 1, y: 2 })
+      .extract('x')
+      .then((val, ctx) => {
+        ctx.z = 3;
+        return val;
+      })
+      .toObject();
+
+    expect(value).toBe(1);
+    expect(context).toEqual({ x: 1, y: 2, z: 3 });
+  });
+});
+
+describe('TacitPromise - when (updated)', () => {
+  it('should execute function when predicate is true', async () => {
+    const result = await TacitPromise.begin(10)
+      .when(
+        (val) => val > 5,
+        (val) => val * 2
+      )
+      .getValue();
+
+    expect(result).toBe(20);
+  });
+
+  it('should skip function when predicate is false', async () => {
+    const result = await TacitPromise.begin(3)
+      .when(
+        (val) => val > 5,
+        (val) => val * 2
+      )
+      .getValue();
+
+    expect(result).toBe(3); // Unchanged
+  });
+
+  it('should handle async predicates', async () => {
+    const asyncCheck = async (val: number) => {
+      await new Promise(resolve => setTimeout(resolve, 10));
+      return val > 5;
+    };
+
+    const result = await TacitPromise.begin(10)
+      .when(asyncCheck, (val) => val * 2)
+      .getValue();
+
+    expect(result).toBe(20);
+  });
+
+  it('should handle async predicates that return false', async () => {
+    const asyncCheck = async (val: number) => {
+      await new Promise(resolve => setTimeout(resolve, 10));
+      return val > 5;
+    };
+
+    const result = await TacitPromise.begin(3)
+      .when(asyncCheck, (val) => val * 2)
+      .getValue();
+
+    expect(result).toBe(3); // Unchanged
+  });
+
+  it('should allow access to context in async predicate', async () => {
+    const pathExists = async (path: string) => {
+      await new Promise(resolve => setTimeout(resolve, 10));
+      return path === '/tmp/test';
+    };
+
+    const result = await TacitPromise.create({ testPath: '/tmp/test' })
+      .then(() => '/tmp/test')
+      .when(pathExists, () => 'file exists')
+      .getValue();
+
+    expect(result).toBe('file exists');
+  });
+
+  it('should handle async functions after async predicate', async () => {
+    const asyncCheck = async (val: number) => val > 5;
+    const asyncTransform = async (val: number) => {
+      await new Promise(resolve => setTimeout(resolve, 10));
+      return val * 2;
+    };
+
+    const result = await TacitPromise.begin(10)
+      .when(asyncCheck, asyncTransform)
+      .getValue();
+
+    expect(result).toBe(20);
+  });
+});
