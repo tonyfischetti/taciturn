@@ -1,6 +1,7 @@
 # taciturn
 
-> Promises for tacit programming with implicit context threading
+> Promises for tacit programming. Thread context through your chains without
+  the ceremony.
 
 ## Installation
 
@@ -12,7 +13,7 @@ npm install taciturn
 
 ## Why?
 
-[Problem statement with your codex example]
+[codex example]
 
 ## API
 
