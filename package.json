@@ -1,0 +1,57 @@
+{
+  "name": "taciturn",
+  "version": "0.0.0",
+  "description": "Promises for tacit programming with implicit context threading",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean",
+    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "keywords": [
+    "promise",
+    "async",
+    "context",
+    "monad",
+    "functional",
+    "tacit",
+    "point-free"
+  ],
+  "author": "Tony Fischetti <tony.fischetti@gmail.com>",
+  "license": "GPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tonyfischetti/taciturn.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tonyfischetti/taciturn/issues"
+  },
+  "homepage": "https://github.com/tonyfischetti/taciturn#readme",
+  "devDependencies": {
+    "@changesets/cli": "^2.29.7",
+    "@eslint/js": "^9.38.0",
+    "@types/node": "^20.11.0",
+    "eslint": "^8.57.1",
+    "prettier": "^3.6.2",
+    "tsup": "^8.5.0",
+    "typescript": "^5.3.3",
+    "typescript-eslint": "^8.46.2",
+    "vitest": "^1.6.1"
+  }
+}
