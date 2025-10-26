@@ -105,6 +105,60 @@ export class TacitPromise<T, C extends Record<string, any> = Record<string, any>
     }));
   }
 
+  /* store a value in the context */
+  tap(key: keyof C): TacitPromise<T, C> {
+    return this.then((value, ctx) => {
+      (ctx as any)[key] = value;
+      return value;
+    });
+  }
+
+  /* transform without context */
+  map<U>(fn: (value: T) => U): TacitPromise<U, C> {
+    return this.then((value) => fn(value));
+  }
+
+  /* conditional execution */
+  when(
+    predicate: (value: T, ctx: C) => boolean,
+    fn: (value: T, ctx: C) => T | PromiseLike<T>
+  ): TacitPromise<T, C> {
+    return this.then((value, ctx) => {
+      if (predicate(value, ctx)) {
+        return fn(value, ctx);
+      }
+      return value;
+    });
+  }
+
+  /* filter arrays */
+  filter<Item>(
+    fn: (item: Item, index: number, ctx: C) => boolean
+  ): TacitPromise<Item[], C> {
+    return this.then((value: any, ctx) => {
+      if (!Array.isArray(value)) {
+        throw new Error('filter requires an array value');
+      }
+      return value.filter((item, i) => fn(item, i, ctx));
+    });
+  }
+  
+  /* mapcar */
+  mapcar<Item, Result>(
+    fn: (item: Item, index: number, ctx: C) => Result
+  ): TacitPromise<Result[], C> {
+    return this.then((value: any, ctx) => {
+      if (!Array.isArray(value)) {
+        throw new Error('mapcar requires an array value');
+      }
+      return value.map((item, i) => fn(item, i, ctx));
+    });
+  }
+
+  /**
+    * Static methods
+    */
+
   static create<C extends Record<string, any> = {}>(
     initialContext: C = {} as C
   ): TacitPromise<undefined, C> {
