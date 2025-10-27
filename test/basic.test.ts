@@ -470,39 +470,39 @@ describe('TacitPromise - mapcar', () => {
   });
 });
 
-describe('TacitPromise - extract', () => {
-  it('should extract value from context', async () => {
+describe('TacitPromise - focus', () => {
+  it('should focus value from context', async () => {
     const result = await TacitPromise.create({ userId: 123, name: 'Alice' })
-      .extract('userId')
+      .focus('userId')
       .getValue();
 
     expect(result).toBe(123);
   });
 
-  it('should extract different types', async () => {
+  it('should focus different types', async () => {
     const result = await TacitPromise.create({ 
       name: 'Alice', 
       age: 30,
       active: true 
     })
-      .extract('name')
+      .focus('name')
       .getValue();
 
     expect(result).toBe('Alice');
   });
 
-  it('should allow chaining after extract', async () => {
+  it('should allow chaining after focus', async () => {
     const result = await TacitPromise.create({ count: 5 })
-      .extract('count')
+      .focus('count')
       .map(x => x * 2)
       .getValue();
 
     expect(result).toBe(10);
   });
 
-  it('should preserve context after extract', async () => {
+  it('should preserve context after focus', async () => {
     const { value, context } = await TacitPromise.create({ x: 1, y: 2 })
-      .extract('x')
+      .focus('x')
       .then((val, ctx) => {
         ctx.z = 3;
         return val;
@@ -518,7 +518,7 @@ describe('TacitPromise - extract', () => {
       root: '/tmp',
       filename: 'test.txt' 
     })
-      .extract('root')
+      .focus('root')
       .map(root => `${root}/data`)
       .then((path, ctx) => `${path}/${ctx.filename}`)
       .getValue();
@@ -526,7 +526,7 @@ describe('TacitPromise - extract', () => {
     expect(result).toBe('/tmp/data/test.txt');
   });
 
-  it('should extract and use in filter', async () => {
+  it('should focus and use in filter', async () => {
     const result = await TacitPromise.create({ minAge: 25 })
       .then(() => [
         { name: 'Alice', age: 30 },
@@ -534,7 +534,7 @@ describe('TacitPromise - extract', () => {
         { name: 'Charlie', age: 28 }
       ])
       .tap('users')
-      .extract('minAge')
+      .focus('minAge')
       .then((minAge, ctx) => {
         return ctx.users.filter((u: any) => u.age >= minAge);
       })
@@ -607,14 +607,14 @@ describe('TacitPromise - integration tests', () => {
     expect(value).toBe('item-6, item-7, item-8, item-9, item-10');
   });
 
-  it('should combine extract and when for path operations', async () => {
+  it('should combine focus and when for path operations', async () => {
     const fileRemoved = vi.fn();
 
     const result = await TacitPromise.create({ 
       root: '/tmp',
       dbName: 'test.db' 
     })
-      .extract('root')
+      .focus('root')
       .then((root, ctx) => `${root}/${ctx.dbName}`)  // Access dbName from context
       .when(
         (path) => path.endsWith('.db'),
@@ -644,10 +644,10 @@ describe('TacitPromise - integration tests', () => {
     const { value, context } = await TacitPromise.create<CodexContext>({ 
       codexRoot: '/tmp/codex' 
     })
-      .extract('codexRoot')
+      .focus('codexRoot')
       .map(root => `${root}/codex.db`)
       .tap('dbPath')
-      .extract('codexRoot')
+      .focus('codexRoot')
       .then(() => mockFiles)
       .tap('allFiles')
       .filter((file: any) => file.isFile())
@@ -666,3 +666,176 @@ describe('TacitPromise - integration tests', () => {
     expect(value).toEqual(['FILE1.JS', 'FILE3.JS']);
   });
 });
+
+describe('TacitPromise - tee', () => {
+  it('should output value and full context by default', async () => {
+    const logs: any[] = [];
+    const mockLog = (data: any) => logs.push(data);
+
+    const result = await TacitPromise.create({ userId: 123, name: 'Alice' })
+      .then(() => 'test-value')
+      .tee('checkpoint', null, mockLog)
+      .getValue();
+
+    expect(result).toBe('test-value');
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toEqual({
+      label: 'checkpoint',
+      value: 'test-value',
+      context: { userId: 123, name: 'Alice' }
+    });
+  });
+
+  it('should use default label "tee" when no label provided', async () => {
+    const logs: any[] = [];
+    const mockLog = (data: any) => logs.push(data);
+
+    await TacitPromise.begin(42)
+      .tee(undefined, null, mockLog)
+      .getValue();
+
+    expect(logs[0].label).toBe('tee');
+  });
+
+  it('should filter context to specific fields', async () => {
+    const logs: any[] = [];
+    const mockLog = (data: any) => logs.push(data);
+
+    await TacitPromise.create({ userId: 123, name: 'Alice', secret: 'xxx' })
+      .then(() => 'data')
+      .tee('filtered', ['userId', 'name'], mockLog)
+      .getValue();
+
+    expect(logs[0].context).toEqual({
+      userId: 123,
+      name: 'Alice'
+    });
+    expect(logs[0].context.secret).toBeUndefined();
+  });
+
+  it('should show no context when fields is empty array', async () => {
+    const logs: any[] = [];
+    const mockLog = (data: any) => logs.push(data);
+
+    await TacitPromise.create({ userId: 123, name: 'Alice' })
+      .then(() => 'value')
+      .tee('no-context', [], mockLog)
+      .getValue();
+
+    expect(logs[0].context).toEqual({});
+  });
+
+  it('should use console.log by default', async () => {
+    const originalLog = console.log;
+    const logs: any[] = [];
+    console.log = (...args: any[]) => logs.push(args);
+
+    await TacitPromise.create({ x: 1 })
+      .then(() => 'test')
+      .tee('default-log')
+      .getValue();
+
+    console.log = originalLog;
+
+    expect(logs).toHaveLength(1);
+    expect(logs[0][0]).toBe('[default-log]');
+    expect(logs[0][1]).toEqual({
+      value: 'test',
+      context: { x: 1 }
+    });
+  });
+
+  it('should pass through value unchanged', async () => {
+    const result = await TacitPromise.begin(42)
+      .tee('check', ['unused'], () => {})
+      .map(x => x * 2)
+      .getValue();
+
+    expect(result).toBe(84);
+  });
+
+  it('should allow custom formatters', async () => {
+    const logs: string[] = [];
+    const customFormatter = (data: any) => {
+      logs.push(JSON.stringify(data, null, 2));
+    };
+
+    await TacitPromise.create({ step: 1 })
+      .then(() => 'result')
+      .tee('custom', ['step'], customFormatter)
+      .getValue();
+
+    expect(logs).toHaveLength(1);
+    const parsed = JSON.parse(logs[0]);
+    expect(parsed.label).toBe('custom');
+    expect(parsed.value).toBe('result');
+    expect(parsed.context).toEqual({ step: 1 });
+  });
+
+  it('should work in pipelines for debugging', async () => {
+    const logs: any[] = [];
+    const mockLog = (data: any) => logs.push(data);
+
+    await TacitPromise.create({ multiplier: 3 })
+      .then(() => 5)
+      .tee('initial', null, mockLog)
+      .map(x => x * 2)
+      .tee('after-double', null, mockLog)
+      .then((x, ctx) => x * ctx.multiplier)
+      .tee('final', ['multiplier'], mockLog)
+      .getValue();
+
+    expect(logs).toHaveLength(3);
+    expect(logs[0].value).toBe(5);
+    expect(logs[1].value).toBe(10);
+    expect(logs[2].value).toBe(30);
+    expect(logs[2].context).toEqual({ multiplier: 3 });
+  });
+
+  it('should handle complex context filtering', async () => {
+    const logs: any[] = [];
+    const mockLog = (data: any) => logs.push(data);
+
+    interface ComplexContext {
+      userId: number;
+      requestId: string;
+      metadata: {
+        timestamp: number;
+        source: string;
+      };
+      internal: string;
+    }
+
+    await TacitPromise.create<ComplexContext>({
+      userId: 123,
+      requestId: 'req-456',
+      metadata: {
+        timestamp: Date.now(),
+        source: 'api'
+      },
+      internal: 'secret'
+    })
+      .then(() => 'response')
+      .tee('api-response', ['userId', 'requestId', 'metadata'], mockLog)
+      .getValue();
+
+    expect(logs[0].context).toHaveProperty('userId', 123);
+    expect(logs[0].context).toHaveProperty('requestId', 'req-456');
+    expect(logs[0].context).toHaveProperty('metadata');
+    expect(logs[0].context).not.toHaveProperty('internal');
+  });
+
+  it('should allow logging with no label and full context', async () => {
+    const logs: any[] = [];
+    const mockLog = (data: any) => logs.push(data);
+
+    await TacitPromise.create({ x: 1 })
+      .then(() => 'value')
+      .tee(undefined, undefined, mockLog)
+      .getValue();
+
+    expect(logs[0].label).toBe('tee');
+    expect(logs[0].context).toEqual({ x: 1 });
+  });
+});
+

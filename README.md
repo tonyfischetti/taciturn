@@ -143,48 +143,146 @@ For conditional **transformations**, use `.then()` with an `if` statement:
 ```
 
 
-#### `.extract(key)`
-Extract a value from context and make it the current value. Useful for switching focus from one context property to another.
+#### `.focus(key)`
+Shift focus to a specific property in context, making it the current value. The full context remains accessible.
 ```javascript
+// Basic usage - zoom in on a context property
 TacitPromise.create({ 
   rootPath: '/tmp',
   filename: 'data.txt' 
 })
-  .extract('rootPath')
+  .focus('rootPath')
   .map(root => `${root}/output`)
   .then((path, ctx) => `${path}/${ctx.filename}`)
   // Result: '/tmp/output/data.txt'
 
-// Real-world example: processing paths
+// Shifting focus multiple times in a pipeline
 TacitPromise.create({ 
   codexRoot: '/projects/codex',
   dbName: 'codex.db' 
 })
-  .extract('codexRoot')
+  .focus('codexRoot')              // Focus on root path
   .map(root => `${root}/data`)
   .map(dir => `${dir}/codex.db`)
+  .tap('dbPath')                   // Store computed path
   .then(createDatabase)
-  // Creates database at /projects/codex/data/codex.db
-  // while preserving full context
+  .focus('codexRoot')              // Shift focus back to root
+  .then(getAllFiles)               // Process files from root
+  // Full context still available throughout
 
-// Chaining extracts
+// Using focus with filters
 TacitPromise.create({
-  users: [...],
+  users: [
+    { name: 'Aisha', age: 30 },
+    { name: 'Bing', age: 20 }
+  ],
   minAge: 25,
   country: 'US'
 })
-  .extract('users')
+  .focus('users')
   .filter((user, _, ctx) => user.age >= ctx.minAge)
   .filter((user, _, ctx) => user.country === ctx.country)
-  // Filters users by both minAge and country from context
+  // Focus on users, but still access minAge and country from context
 ```
 
-`extract()` is particularly useful when:
-- You need to switch focus to a specific context value
+`.focus()` is particularly useful when:
 - Building file paths from components stored in context
-- Extracting configuration values for processing
-- Working with accumulated results from earlier pipeline stages
+- Processing one piece of data while referencing configuration
+- Switching between different context values in a pipeline
+- You want to "zoom in" on part of your context temporarily
+
+The name "focus" emphasizes that you're shifting attention to a specific value while keeping the full context accessible - like focusing a camera on one subject while the background remains visible.
+
+
+#### `.tee(label?, fields?, fn?)`
+Inspect the current value and context without changing them. Like the Unix `tee` command, it allows you to "tap into" the pipeline for debugging, logging, or monitoring.
+```javascript
+// Basic usage - log value and full context
+TacitPromise.begin(42)
+  .tee('checkpoint')
+  // Console: [checkpoint] { value: 42, context: {...} }
+
+// Filter context to specific fields (reduce noise)
+TacitPromise.create({ userId: 123, apiKey: 'secret', debug: true })
+  .then(fetchUser)
+  .tee('after-fetch', ['userId', 'debug'])
+  // Console: [after-fetch] { value: {...}, context: { userId: 123, debug: true } }
+  // Note: apiKey is hidden
+
+// Show value only (no context)
+TacitPromise.begin('data')
+  .tee('value-only', [])
+  // Console: [value-only] { value: 'data', context: {} }
+
+// Custom formatter - pretty print
+TacitPromise.create({ step: 1 })
+  .then(() => ({ result: 'success' }))
+  .tee('pretty', null, (data) => 
+    console.log(JSON.stringify(data, null, 2))
+  )
+
+// Custom formatter with filtered context
+TacitPromise.create({ userId: 123, requestId: 'abc', secret: 'xxx' })
+  .then(processRequest)
+  .tee('audit', ['userId', 'requestId'], (data) => 
+    logger.info(data.label, { 
+      value: data.value, 
+      context: data.context 
+    })
+  )
+
+// Multiple tee points in a pipeline for debugging
+TacitPromise.create({ multiplier: 3 })
+  .then(() => 5)
+  .tee('start')
+  .map(x => x * 2)
+  .tee('doubled')
+  .then((x, ctx) => x * ctx.multiplier)
+  .tee('final', ['multiplier'])
+  // Track value changes through the pipeline
+
+// Real-world example: API request monitoring
+TacitPromise.create({ 
+  userId: 123, 
+  requestId: 'req-456',
+  startTime: Date.now()
+})
+  .then(validateRequest)
+  .tee('validated', ['userId', 'requestId'])
+  .then(fetchFromDB)
+  .tee('fetched', ['userId', 'requestId'], (data) => {
+    metrics.record('db_fetch', {
+      userId: data.context.userId,
+      duration: Date.now() - data.context.startTime
+    });
+  })
+  .then(transformData)
+  .tee('transformed', ['userId', 'requestId'])
+  .catch((err, ctx) => {
+    logger.error('Request failed', { 
+      error: err, 
+      userId: ctx.userId, 
+      requestId: ctx.requestId 
+    });
+  })
 ```
+
+**Parameters:**
+- `label` (optional): String label for the output. Defaults to `"tee"`.
+- `fields` (optional): Array of context keys to include. 
+  - `null` or `undefined` = show full context (default)
+  - `[]` = show no context
+  - `['key1', 'key2']` = show only specified keys
+- `fn` (optional): Custom output function. Receives `{ label, value, context }`. Defaults to `console.log`.
+
+`.tee()` is perfect for:
+- Debugging pipeline steps without breaking the chain
+- Logging/auditing with filtered context (hide secrets)
+- Recording metrics at specific points
+- Verifying transformations during development
+- Monitoring production data flow
+
+The value always passes through unchanged, making it safe to add `.tee()` calls anywhere for inspection.
 
 
 #### `.filter(fn)`
@@ -289,3 +387,4 @@ const promise: TacitPromise =
 ## License
 
 GPL-3
+

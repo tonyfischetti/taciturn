@@ -105,6 +105,36 @@ export class TacitPromise<T, C extends Record<string, any> = Record<string, any>
     }));
   }
 
+  tee(
+    label?: string,
+    fields?: (keyof C)[] | null,
+    fn?: (data: { label: string; value: T; context: Partial<C> | C }) => void
+  ): TacitPromise<T, C> {
+    return this.then((value, ctx) => {
+      const prefix = label || 'tee';
+      
+      // null/undefined = full context, [] = no context, [...fields] = filtered
+      let contextToShow: any;
+      if (fields === null || fields === undefined) {
+        contextToShow = ctx;
+      } else if (fields.length === 0) {
+        contextToShow = {};
+      } else {
+        contextToShow = Object.fromEntries(fields.map(key => [key, ctx[key]]));
+      }
+      
+      const output = { label: prefix, value, context: contextToShow };
+      
+      if (fn) {
+        fn(output);
+      } else {
+        console.log(`[${output.label}]`, { value: output.value, context: output.context });
+      }
+      
+      return value;
+    });
+  }
+
   /* store a value in the context */
   tap(key: keyof C): TacitPromise<T, C> {
     return this.then((value, ctx) => {
@@ -156,7 +186,11 @@ export class TacitPromise<T, C extends Record<string, any> = Record<string, any>
     });
   }
 
-  extract<K extends keyof C>(key: K): TacitPromise<C[K], C> {
+  /** 
+    * shift focus on something in context
+    * (make it the current value
+    */
+  focus<K extends keyof C>(key: K): TacitPromise<C[K], C> {
     return this.then((_, ctx) => ctx[key]) as any;
   }
 
@@ -177,3 +211,4 @@ export class TacitPromise<T, C extends Record<string, any> = Record<string, any>
     return new TacitPromise((resolve) => resolve(value), context);
   }
 }
+
