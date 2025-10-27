@@ -536,7 +536,7 @@ TacitPromise.create(context).
     filter(notBlacklistedP).
 
   then(log("parsing tags")).
-    map(addFirstLineAsKey).
+    map(addFirstLineAsKey, { concurrency: 10 }).
     map(addTags).
     map(addAFileID).
 
@@ -544,8 +544,7 @@ TacitPromise.create(context).
     map(insertFile).
     map(insertTags).
 
-  focus('db').
-  then(closeDB).
+  finally(closeDB).
   
   catch(consola.error).
   then(log("done", consola.success));
