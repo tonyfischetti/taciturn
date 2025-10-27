@@ -1,10 +1,9 @@
 # taciturn
 
+[![npm version](https://badge.fury.io/js/taciturn.svg)](https://www.npmjs.com/package/taciturn)
+
 > Promises for tacit programming. Thread context through your chains without
   the ceremony.
-
-[![npm version](https://badge.fury.io/js/taciturn.svg)](https://www.npmjs.com/package/taciturn)
-[![CI](https://github.com/tonyfischetti/taciturn/actions/workflows/ci.yml/badge.svg)](https://github.com/tonyfischetti/taciturn/actions/workflows/ci.yml)
 
 
 ## Installation
