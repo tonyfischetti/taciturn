@@ -64,6 +64,64 @@ Like Promise.catch, but callback receives `(error, context)`.
 })
 ```
 
+#### `.finally(onFinally?)`
+Execute a cleanup function after the promise settles (success or failure). The callback receives the context for cleanup operations.
+```javascript
+// Basic cleanup
+TacitPromise.create({ db: connection })
+  .then(doWork)
+  .finally((ctx) => {
+    if (ctx.db) {
+      ctx.db.close();
+    }
+  })
+
+// Always runs, even on error
+TacitPromise.create({ file: handle })
+  .then(processFile)
+  .catch(handleError)
+  .finally((ctx) => {
+    ctx.file.close();
+    console.log('File closed');
+  })
+
+// Real-world example: database cleanup
+TacitPromise.create(context)
+  .then(createDB)
+  .tap('db')
+  .then(createTables)
+  .then(insertData)
+  .finally((ctx) => {
+    if (ctx.db) {
+      ctx.db.close();
+      console.log('Database closed');
+    }
+  })
+  .catch(console.error)
+
+// Multiple cleanup steps
+TacitPromise.create({ db: null, cache: null })
+  .then(initialize)
+  .then(process)
+  .finally((ctx) => {
+    if (ctx.db) ctx.db.close();
+    if (ctx.cache) ctx.cache.clear();
+    console.log('Cleanup complete');
+  })
+```
+
+`.finally()` is perfect for:
+- Closing database connections
+- Releasing file handles
+- Clearing temporary files
+- Logging completion (success or failure)
+- Releasing locks or resources
+- Cleanup that must always happen
+
+The callback receives the full context, allowing access to any resources
+that need cleanup. The value passes through unchanged, and errors continue
+to propagate after cleanup.
+
 ### Helper Methods
 
 #### `.tap(key)`

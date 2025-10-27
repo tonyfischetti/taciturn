@@ -82,6 +82,24 @@ export class TacitPromise<T, C extends Record<string, any> = Record<string, any>
     return this.then(null, onRejected);
   }
 
+  override finally(onFinally?: ((ctx: C) => void | PromiseLike<void>) | null): TacitPromise<T, C> {
+    return this.then(
+      async (value, ctx) => {
+        if (onFinally) {
+          await onFinally(ctx);
+        }
+        return value;
+      },
+      async (error, ctx) => {
+        if (onFinally) {
+          await onFinally(ctx);
+        }
+        throw error;
+      }
+    );
+  }
+
+
   getValue(): Promise<T> {
     return super.then(
       (wrapped: any) => wrapped.__value,

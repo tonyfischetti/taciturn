@@ -1104,3 +1104,124 @@ describe('TacitPromise - tee', () => {
   });
 });
 
+describe('TacitPromise - finally', () => {
+  it('should call finally on success', async () => {
+    const finallyFn = vi.fn();
+
+    const result = await TacitPromise.begin(42)
+      .then(x => x * 2)
+      .finally(finallyFn)
+      .getValue();
+
+    expect(result).toBe(84);
+    expect(finallyFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('should call finally on error', async () => {
+    const finallyFn = vi.fn();
+
+    try {
+      await TacitPromise.begin(42)
+        .then(() => {
+          throw new Error('test error');
+        })
+        .finally(finallyFn)
+        .getValue();
+      
+      expect.fail('Should have thrown');
+    } catch (error: any) {
+      expect(error.message).toBe('test error');
+      expect(finallyFn).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('should pass context to finally callback', async () => {
+    let capturedContext: any;
+
+    await TacitPromise.create({ userId: 123, db: 'mock-db' })
+      .then(() => 'done')
+      .finally((ctx) => {
+        capturedContext = ctx;
+      })
+      .getValue();
+
+    expect(capturedContext.userId).toBe(123);
+    expect(capturedContext.db).toBe('mock-db');
+  });
+
+  it('should preserve value through finally', async () => {
+    const result = await TacitPromise.begin(42)
+      .then(x => x * 2)
+      .finally(() => {
+        // Side effect that doesn't change value
+      })
+      .then(x => x + 10)
+      .getValue();
+
+    expect(result).toBe(94); // (42 * 2) + 10
+  });
+
+  it('should preserve context through finally', async () => {
+    const { value, context } = await TacitPromise.create({ count: 0 })
+      .then((_, ctx) => {
+        ctx.count = 5;
+        return 'test';
+      })
+      .finally((ctx) => {
+        ctx.finalized = true;
+      })
+      .toObject();
+
+    expect(value).toBe('test');
+    expect(context.count).toBe(5);
+    expect(context.finalized).toBe(true);
+  });
+
+  it('should handle cleanup in finally', async () => {
+    const mockDB = {
+      isOpen: true,
+      close: vi.fn(function() { this.isOpen = false; })
+    };
+
+    await TacitPromise.create({ db: mockDB })
+      .then(() => 'work done')
+      .finally((ctx) => {
+        if (ctx.db.isOpen) {
+          ctx.db.close();
+        }
+      })
+      .getValue();
+
+    expect(mockDB.close).toHaveBeenCalledTimes(1);
+    expect(mockDB.isOpen).toBe(false);
+  });
+
+  it('should call finally even after catch', async () => {
+    const finallyFn = vi.fn();
+
+    const result = await TacitPromise.begin(42)
+      .then(() => {
+        throw new Error('error');
+      })
+      .catch(() => 'recovered')
+      .finally(finallyFn)
+      .getValue();
+
+    expect(result).toBe('recovered');
+    expect(finallyFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('should handle async finally callback', async () => {
+    let cleanedUp = false;
+
+    await TacitPromise.begin(42)
+      .finally(async () => {
+        await new Promise(resolve => setTimeout(resolve, 10));
+        cleanedUp = true;
+      })
+      .getValue();
+
+    expect(cleanedUp).toBe(true);
+  });
+});
+
