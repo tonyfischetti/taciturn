@@ -164,25 +164,33 @@ export class TacitPromise<T, C extends Record<string, any> = Record<string, any>
 
   /* filter arrays */
   filter<Item>(
-    fn: (item: Item, index: number, ctx: C) => boolean
+    fn: (item: Item, index: number, ctx: C) => boolean | PromiseLike<boolean>
   ): TacitPromise<Item[], C> {
-    return this.then((value: any, ctx) => {
+    return this.then(async (value: any, ctx) => {
       if (!Array.isArray(value)) {
         throw new Error('filter requires an array value');
       }
-      return value.filter((item, i) => fn(item, i, ctx));
+      
+      // Evaluate all predicates in parallel
+      const results = await Promise.all(
+        value.map((item, i) => fn(item, i, ctx))
+      );
+      
+      // Filter based on results
+      return value.filter((_, i) => results[i]);
     });
   }
   
   /* mapcar */
   mapcar<Item, Result>(
-    fn: (item: Item, index: number, ctx: C) => Result
+    fn: (item: Item, index: number, ctx: C) => Result | PromiseLike<Result>
   ): TacitPromise<Result[], C> {
-    return this.then((value: any, ctx) => {
+    return this.then(async (value: any, ctx) => {
       if (!Array.isArray(value)) {
         throw new Error('mapcar requires an array value');
       }
-      return value.map((item, i) => fn(item, i, ctx));
+      // Use Promise.all to wait for all async operations
+      return Promise.all(value.map((item, i) => fn(item, i, ctx)));
     });
   }
 

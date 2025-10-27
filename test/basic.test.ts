@@ -383,6 +383,55 @@ describe('TacitPromise - filter', () => {
   });
 });
 
+it('should handle async predicates in filter', async () => {
+  const asyncGreaterThan = async (x: number, threshold: number) => {
+    await new Promise(resolve => setTimeout(resolve, 10));
+    return x > threshold;
+  };
+
+  const result = await TacitPromise.begin([1, 2, 3, 4, 5])
+    .filter(async (x) => asyncGreaterThan(x, 2))
+    .getValue();
+
+  expect(result).toEqual([3, 4, 5]);
+});
+
+it('should handle async predicates with context in filter', async () => {
+  const fileExists = async (path: string) => {
+    await new Promise(resolve => setTimeout(resolve, 10));
+    return path.includes('exists');
+  };
+
+  const result = await TacitPromise.begin([
+    'file-exists.txt',
+    'missing.txt',
+    'also-exists.txt'
+  ])
+    .filter(fileExists)
+    .getValue();
+
+  expect(result).toEqual(['file-exists.txt', 'also-exists.txt']);
+});
+
+it('should run filter predicates in parallel', async () => {
+  const startTime = Date.now();
+  
+  const slowCheck = async (x: number) => {
+    await new Promise(resolve => setTimeout(resolve, 50));
+    return x > 2;
+  };
+
+  await TacitPromise.begin([1, 2, 3, 4])
+    .filter(slowCheck)
+    .getValue();
+
+  const duration = Date.now() - startTime;
+  
+  // If sequential: 4 * 50ms = 200ms
+  // If parallel: ~50ms
+  expect(duration).toBeLessThan(100);
+});
+
 describe('TacitPromise - mapcar', () => {
   it('should map function over array', async () => {
     const result = await TacitPromise.begin([1, 2, 3])
@@ -468,6 +517,57 @@ describe('TacitPromise - mapcar', () => {
 
     expect(result).toEqual([4, 16, 36]); // [2, 4, 6] -> [4, 16, 36]
   });
+});
+
+it('should handle async mappers', async () => {
+  const asyncDouble = async (x: number) => {
+    await new Promise(resolve => setTimeout(resolve, 10));
+    return x * 2;
+  };
+
+  const result = await TacitPromise.begin([1, 2, 3])
+    .mapcar(asyncDouble)
+    .getValue();
+
+  expect(result).toEqual([2, 4, 6]);
+});
+
+it('should handle async mappers with context', async () => {
+  const asyncMultiply = async (x: number, _: number, ctx: any) => {
+    await new Promise(resolve => setTimeout(resolve, 10));
+    return x * ctx.multiplier;
+  };
+
+  const result = await TacitPromise.create({ multiplier: 3 })
+    .then(() => [1, 2, 3])
+    .mapcar(asyncMultiply)
+    .getValue();
+
+  expect(result).toEqual([3, 6, 9]);
+});
+
+it('should work with real file operations', async () => {
+  // Mock file objects
+  const files = [
+    { path: 'file1.txt', content: 'line1\nline2' },
+    { path: 'file2.txt', content: 'first\nsecond' }
+  ];
+
+  const readFirstLine = async (file: any) => {
+    // Simulate async file read
+    await new Promise(resolve => setTimeout(resolve, 5));
+    const firstLine = file.content.split('\n')[0];
+    return { ...file, firstLine };
+  };
+
+  const result = await TacitPromise.begin(files)
+    .mapcar(readFirstLine)
+    .getValue();
+
+  expect(result).toEqual([
+    { path: 'file1.txt', content: 'line1\nline2', firstLine: 'line1' },
+    { path: 'file2.txt', content: 'first\nsecond', firstLine: 'first' }
+  ]);
 });
 
 describe('TacitPromise - focus', () => {

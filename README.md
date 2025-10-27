@@ -9,7 +9,7 @@
 
 ## Installation
 
-npm install taciturn
+`npm install taciturn`
 
 
 ## Quick Start
@@ -286,20 +286,114 @@ The value always passes through unchanged, making it safe to add `.tee()` calls 
 
 
 #### `.filter(fn)`
-Filter array values.
+Filter array values. Supports both sync and async predicates. When predicates return promises, evaluates all in parallel.
 ```javascript
+// Sync predicate
 TacitPromise.begin([1, 2, 3, 4, 5])
   .filter(x => x > 2)
   // [3, 4, 5]
+
+// Async predicate
+const fileExists = async (path) => {
+  try {
+    await fs.stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+TacitPromise.begin([
+  '/tmp/file1.txt',
+  '/tmp/missing.txt',
+  '/tmp/file2.txt'
+])
+  .filter(fileExists)
+  // Only includes files that exist
+  // All checks run in parallel
+
+// With context
+TacitPromise.create({ minSize: 1024 })
+  .then(() => files)
+  .filter(async (file, _, ctx) => {
+    const stats = await fs.stat(file.path);
+    return stats.size >= ctx.minSize;
+  })
+  // Only files >= 1024 bytes
+
+// Real-world example: filter valid API responses
+const isValidUser = async (userId) => {
+  try {
+    const response = await fetch(`/api/users/${userId}`);
+    return response.ok;
+  } catch {
+    return false;
+  }
+};
+
+TacitPromise.begin([1, 2, 3, 4, 5])
+  .filter(isValidUser)
+  // Only IDs that correspond to valid users
+  // All API calls made in parallel
+
+// Combining with index
+TacitPromise.begin(['a', 'b', 'c', 'd'])
+  .filter(async (item, index) => {
+    await new Promise(resolve => setTimeout(resolve, 10));
+    return index % 2 === 0;
+  })
+  // ['a', 'c'] - even indices only
 ```
+
+**Note:** All async predicates evaluate in parallel (via `Promise.all`). This is efficient but means:
+- Side effects may occur in any order
+- All predicates are evaluated even if some fail
+- For sequential processing with early termination, use `.then()` with a `for` loop instead
 
 
 #### `.mapcar(fn)`
-Map over array values.
+Map over array values. Supports both sync and async mapper functions. When mappers return promises, waits for all to complete.
 ```javascript
+// Sync mapper
 TacitPromise.begin([1, 2, 3])
   .mapcar(x => x * 2)
   // [2, 4, 6]
+
+// Async mapper
+const fetchUserData = async (userId) => {
+  const response = await fetch(`/api/users/${userId}`);
+  return response.json();
+};
+
+TacitPromise.begin([1, 2, 3])
+  .mapcar(fetchUserData)
+  // Waits for all fetches to complete
+  // Returns array of user objects
+
+// Real-world example: reading file contents
+const readFirstLine = async (fileObj) => {
+  const contents = await fs.readFile(fileObj.fullPath, 'utf-8');
+  const firstLine = contents.split('\n')[0];
+  return { ...fileObj, firstLine };
+};
+
+TacitPromise.begin(files)
+  .mapcar(readFirstLine)
+  // All files read in parallel
+  // Returns array with firstLine added to each
+
+// With context
+TacitPromise.create({ apiKey: 'secret' })
+  .then(() => [1, 2, 3])
+  .mapcar(async (id, _, ctx) => {
+    const response = await fetch(`/api/data/${id}`, {
+      headers: { 'Authorization': ctx.apiKey }
+    });
+    return response.json();
+  })
+```
+
+**Note:** All async operations run in parallel (via `Promise.all`). If you need sequential processing, use `.then()` with a `for` loop instead.
 ```
 
 ### Extraction Methods
