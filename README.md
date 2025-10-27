@@ -393,7 +393,6 @@ TacitPromise.create({ apiKey: 'secret' })
 ```
 
 **Note:** All async operations run in parallel (via `Promise.all`). If you need sequential processing, use `.then()` with a `for` loop instead.
-```
 
 ### Extraction Methods
 
@@ -419,31 +418,48 @@ const { value, context } = await promise.toObject();
 
 Building a database indexer:
 ```javascript
-TacitPromise.create({ 
-  CODEX_ROOT: process.env.CODEX_ROOT,
-  DEBUG: false 
-})
-  .then(removeOldDB)
-  .then(createDB)
-  .then(getAllFilesRecursively)
-  .tap('allFiles')
-  .filter(file => file.isFile())
-  .filter(file => !isBlacklisted(file.path))
-  .when(
-    (_, ctx) => ctx.DEBUG,
-    (files) => {
-      console.log(`Processing ${files.length} files`);
-      return files;
-    }
-  )
-  .mapcar(file => addMetadata(file))
-  .then(insertIntoDatabase)
-  .then((_, ctx) => {
-    console.log(`Indexed ${ctx.allFiles.length} files`);
-  })
-  .catch((err, ctx) => {
-    console.error(`Failed at ${ctx.CODEX_ROOT}:`, err);
-  });
+TacitPromise.create(context).
+  then(log("making codex SQLite DB", consola.box)).
+
+  then(getCodexRoot).
+    catch(fatalCantFindCodexRoot).
+    tap("codexRoot").
+
+  then(updateBlacklistPaths).
+    tap("blacklistedPaths").
+
+  focus('codexRoot').
+    map(root => `${root}/codex.db`).
+    tap("codexDBPath").
+  
+  when(pathExistsP, removeOldDB).
+
+  then(log("creating sqlite db")).
+    then(createDB).
+    catch(fatalCantOpenDB).
+    tap('db').
+    then(createTables).
+
+  focus('codexRoot').
+    then(getAllFilesRecursively).
+    filter(filesOnly).
+    mapcar(addAltPathsAsKey).
+    filter(notBlacklistedP).
+
+  then(log("parsing tags")).
+    mapcar(addFirstLineAsKey).
+    mapcar(addTags).
+    mapcar(addAFileID).
+
+  then(log("inserting tags and files")).
+    mapcar(insertFile).
+    mapcar(insertTags).
+
+  focus('db').
+  then(closeDB).
+  
+  catch(consola.error).
+  then(log("done", consola.success));
 ```
 
 
