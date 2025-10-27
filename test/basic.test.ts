@@ -118,60 +118,6 @@ describe('TacitPromise - tap', () => {
   });
 });
 
-describe('TacitPromise - map', () => {
-  it('should transform value without accessing context', async () => {
-    const result = await TacitPromise.begin(5)
-      .map((x) => x * 2)
-      .getValue();
-
-    expect(result).toBe(10);
-  });
-
-  it('should chain multiple maps', async () => {
-    const result = await TacitPromise.begin(5)
-      .map((x) => x * 2)
-      .map((x) => x + 10)
-      .map((x) => x.toString())
-      .getValue();
-
-    expect(result).toBe('20');
-  });
-
-  it('should not affect context', async () => {
-    const { value, context } = await TacitPromise.create({ count: 0 })
-      .then(() => 10)
-      .map((x) => x * 2)
-      .then((_, ctx) => {
-        ctx.count = 5;
-        return 'done';
-      })
-      .toObject();
-
-    expect(value).toBe('done');
-    expect(context.count).toBe(5);
-  });
-
-  it('should work with type transformations', async () => {
-    const result = await TacitPromise.begin(42)
-      .map((n) => n.toString())
-      .map((s) => s.length)
-      .getValue();
-
-    expect(result).toBe(2);
-  });
-
-  it('should work with pure functions', async () => {
-    const double = (x: number) => x * 2;
-    const square = (x: number) => x * x;
-    
-    const result = await TacitPromise.begin(5)
-      .map(double)
-      .map(square)
-      .getValue();
-
-    expect(result).toBe(100); // (5 * 2)^2
-  });
-});
 
 describe('TacitPromise - when', () => {
   it('should pass through value even when condition is true', async () => {
@@ -376,7 +322,7 @@ describe('TacitPromise - filter', () => {
   it('should chain with other operations', async () => {
     const result = await TacitPromise.begin([1, 2, 3, 4, 5])
       .filter((x) => x > 2)
-      .map((arr) => arr.length)
+      .then((arr) => arr.length)
       .getValue();
 
     expect(result).toBe(3);
@@ -432,10 +378,10 @@ it('should run filter predicates in parallel', async () => {
   expect(duration).toBeLessThan(100);
 });
 
-describe('TacitPromise - mapcar', () => {
+describe('TacitPromise - map', () => {
   it('should map function over array', async () => {
     const result = await TacitPromise.begin([1, 2, 3])
-      .mapcar((x) => x * 2)
+      .map((x) => x * 2)
       .getValue();
 
     expect(result).toEqual([2, 4, 6]);
@@ -443,7 +389,7 @@ describe('TacitPromise - mapcar', () => {
 
   it('should provide index to mapper', async () => {
     const result = await TacitPromise.begin(['a', 'b', 'c'])
-      .mapcar((x, i) => `${i}:${x}`)
+      .map((x, i) => `${i}:${x}`)
       .getValue();
 
     expect(result).toEqual(['0:a', '1:b', '2:c']);
@@ -452,7 +398,7 @@ describe('TacitPromise - mapcar', () => {
   it('should provide context to mapper', async () => {
     const result = await TacitPromise.create({ prefix: 'item-' })
       .then(() => [1, 2, 3])
-      .mapcar((x, _, ctx) => `${ctx.prefix}${x}`)
+      .map((x, _, ctx) => `${ctx.prefix}${x}`)
       .getValue();
 
     expect(result).toEqual(['item-1', 'item-2', 'item-3']);
@@ -461,12 +407,12 @@ describe('TacitPromise - mapcar', () => {
   it('should throw error if value is not an array', async () => {
     try {
       await TacitPromise.begin(42 as any)
-        .mapcar((x: any) => x * 2)
+        .map((x: any) => x * 2)
         .getValue();
       
       expect.fail('Should have thrown');
     } catch (error: any) {
-      expect(error.message).toBe('mapcar requires an array value');
+      expect(error.message).toBe('map requires an array value');
     }
   });
 
@@ -482,7 +428,7 @@ describe('TacitPromise - mapcar', () => {
     ];
 
     const result = await TacitPromise.begin(users)
-      .mapcar((user) => user.name)
+      .map((user) => user.name)
       .getValue();
 
     expect(result).toEqual(['Alice', 'Bob']);
@@ -491,16 +437,16 @@ describe('TacitPromise - mapcar', () => {
   it('should chain with filter', async () => {
     const result = await TacitPromise.begin([1, 2, 3, 4, 5])
       .filter((x) => x > 2)
-      .mapcar((x) => x * 2)
+      .map((x) => x * 2)
       .getValue();
 
     expect(result).toEqual([6, 8, 10]);
   });
 
-  it('should work with map after mapcar', async () => {
+  it('should work with map after map', async () => {
     const result = await TacitPromise.begin([1, 2, 3])
-      .mapcar((x) => x * 2)
-      .map((arr) => arr.reduce((sum, x) => sum + x, 0))
+      .map((x) => x * 2)
+      .then((arr) => arr.reduce((sum, x) => sum + x, 0))
       .getValue();
 
     expect(result).toBe(12); // [2, 4, 6] -> 12
@@ -511,8 +457,8 @@ describe('TacitPromise - mapcar', () => {
     const square = (x: number) => x * x;
 
     const result = await TacitPromise.begin([1, 2, 3])
-      .mapcar(double)
-      .mapcar(square)
+      .map(double)
+      .map(square)
       .getValue();
 
     expect(result).toEqual([4, 16, 36]); // [2, 4, 6] -> [4, 16, 36]
@@ -526,7 +472,7 @@ it('should handle async mappers', async () => {
   };
 
   const result = await TacitPromise.begin([1, 2, 3])
-    .mapcar(asyncDouble)
+    .map(asyncDouble)
     .getValue();
 
   expect(result).toEqual([2, 4, 6]);
@@ -540,7 +486,7 @@ it('should handle async mappers with context', async () => {
 
   const result = await TacitPromise.create({ multiplier: 3 })
     .then(() => [1, 2, 3])
-    .mapcar(asyncMultiply)
+    .map(asyncMultiply)
     .getValue();
 
   expect(result).toEqual([3, 6, 9]);
@@ -561,13 +507,232 @@ it('should work with real file operations', async () => {
   };
 
   const result = await TacitPromise.begin(files)
-    .mapcar(readFirstLine)
+    .map(readFirstLine)
     .getValue();
 
   expect(result).toEqual([
     { path: 'file1.txt', content: 'line1\nline2', firstLine: 'line1' },
     { path: 'file2.txt', content: 'first\nsecond', firstLine: 'first' }
   ]);
+});
+
+describe('TacitPromise - map with concurrency', () => {
+  it('should work without concurrency limit (backward compatibility)', async () => {
+    const result = await TacitPromise.begin([1, 2, 3])
+      .map(async (x) => x * 2)
+      .getValue();
+
+    expect(result).toEqual([2, 4, 6]);
+  });
+
+  it('should respect concurrency limit', async () => {
+    let concurrent = 0;
+    let maxConcurrent = 0;
+    
+    const trackingFn = async (x: number) => {
+      concurrent++;
+      maxConcurrent = Math.max(maxConcurrent, concurrent);
+      await new Promise(resolve => setTimeout(resolve, 50));
+      concurrent--;
+      return x * 2;
+    };
+    
+    const result = await TacitPromise.begin([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+      .map(trackingFn, { concurrency: 3 })
+      .getValue();
+    
+    expect(result).toEqual([2, 4, 6, 8, 10, 12, 14, 16, 18, 20]);
+    expect(maxConcurrent).toBeLessThanOrEqual(3);
+    expect(maxConcurrent).toBeGreaterThan(0);
+  });
+
+  it('should maintain result order with concurrency limit', async () => {
+    // Items complete in different order due to varying delays
+    const delays = [100, 10, 80, 20, 90, 5, 70, 30];
+    
+    const result = await TacitPromise.begin([0, 1, 2, 3, 4, 5, 6, 7])
+      .map(async (x, i) => {
+        await new Promise(resolve => setTimeout(resolve, delays[i]));
+        return x;
+      }, { concurrency: 3 })
+      .getValue();
+    
+    // Despite different completion times, results should be in order
+    expect(result).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+  });
+
+  it('should handle concurrency of 1 (sequential processing)', async () => {
+    let concurrent = 0;
+    let maxConcurrent = 0;
+    
+    const trackingFn = async (x: number) => {
+      concurrent++;
+      maxConcurrent = Math.max(maxConcurrent, concurrent);
+      await new Promise(resolve => setTimeout(resolve, 10));
+      concurrent--;
+      return x * 2;
+    };
+    
+    const result = await TacitPromise.begin([1, 2, 3, 4, 5])
+      .map(trackingFn, { concurrency: 1 })
+      .getValue();
+    
+    expect(result).toEqual([2, 4, 6, 8, 10]);
+    expect(maxConcurrent).toBe(1);
+  });
+
+  it('should handle concurrency larger than array length', async () => {
+    const result = await TacitPromise.begin([1, 2, 3])
+      .map(async (x) => {
+        await new Promise(resolve => setTimeout(resolve, 10));
+        return x * 2;
+      }, { concurrency: 100 })
+      .getValue();
+    
+    expect(result).toEqual([2, 4, 6]);
+  });
+
+  it('should handle empty array with concurrency', async () => {
+    const result = await TacitPromise.begin([])
+      .map(async (x: number) => x * 2, { concurrency: 5 })
+      .getValue();
+    
+    expect(result).toEqual([]);
+  });
+
+  it('should pass correct index to mapper with concurrency', async () => {
+    const indices: number[] = [];
+    
+    await TacitPromise.begin(['a', 'b', 'c', 'd', 'e'])
+      .map(async (item, index) => {
+        indices.push(index);
+        await new Promise(resolve => setTimeout(resolve, 10));
+        return item.toUpperCase();
+      }, { concurrency: 2 })
+      .getValue();
+    
+    // All indices should be present
+    expect(indices.sort()).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it('should pass context to mapper with concurrency', async () => {
+    const result = await TacitPromise.create({ multiplier: 3 })
+      .then(() => [1, 2, 3, 4, 5])
+      .map(async (x, _, ctx) => {
+        await new Promise(resolve => setTimeout(resolve, 10));
+        return x * ctx.multiplier;
+      }, { concurrency: 2 })
+      .getValue();
+    
+    expect(result).toEqual([3, 6, 9, 12, 15]);
+  });
+
+  it('should handle errors during concurrent processing', async () => {
+    const failOn = 3;
+    
+    try {
+      await TacitPromise.begin([1, 2, 3, 4, 5])
+        .map(async (x) => {
+          await new Promise(resolve => setTimeout(resolve, 10));
+          if (x === failOn) throw new Error(`Failed on ${x}`);
+          return x * 2;
+        }, { concurrency: 2 })
+        .getValue();
+      
+      expect.fail('Should have thrown');
+    } catch (error: any) {
+      expect(error.message).toBe('Failed on 3');
+    }
+  });
+
+  it('should be faster with higher concurrency', async () => {
+    const items = Array(20).fill(null).map((_, i) => i);
+    
+    // Sequential (concurrency: 1)
+    const startSeq = Date.now();
+    await TacitPromise.begin(items)
+      .map(async (x) => {
+        await new Promise(resolve => setTimeout(resolve, 10));
+        return x;
+      }, { concurrency: 1 })
+      .getValue();
+    const seqDuration = Date.now() - startSeq;
+    
+    // Parallel (concurrency: 10)
+    const startPar = Date.now();
+    await TacitPromise.begin(items)
+      .map(async (x) => {
+        await new Promise(resolve => setTimeout(resolve, 10));
+        return x;
+      }, { concurrency: 10 })
+      .getValue();
+    const parDuration = Date.now() - startPar;
+    
+    // Parallel should be significantly faster
+    // Sequential: ~200ms (20 * 10ms)
+    // Parallel: ~30ms (2 batches of 10 * 10ms)
+    expect(parDuration).toBeLessThan(seqDuration / 2);
+  });
+
+  it('should work with sync mappers and concurrency option', async () => {
+    // Even with concurrency option, sync mappers should work
+    const result = await TacitPromise.begin([1, 2, 3, 4, 5])
+      .map((x) => x * 2, { concurrency: 2 })
+      .getValue();
+    
+    expect(result).toEqual([2, 4, 6, 8, 10]);
+  });
+
+  it('should handle mixed sync and async results', async () => {
+    const result = await TacitPromise.begin([1, 2, 3, 4])
+      .map(async (x) => {
+        // Some complete immediately, some are async
+        if (x % 2 === 0) {
+          await new Promise(resolve => setTimeout(resolve, 10));
+        }
+        return x * 2;
+      }, { concurrency: 2 })
+      .getValue();
+    
+    expect(result).toEqual([2, 4, 6, 8]);
+  });
+
+  it('should work in real-world file processing scenario', async () => {
+    // Simulate file objects
+    const files = Array(50).fill(null).map((_, i) => ({
+      path: `/file${i}.txt`,
+      size: i * 100
+    }));
+    
+    let readsInProgress = 0;
+    let maxReads = 0;
+    
+    const simulateFileRead = async (file: any) => {
+      readsInProgress++;
+      maxReads = Math.max(maxReads, readsInProgress);
+      
+      // Simulate variable read times
+      await new Promise(resolve => 
+        setTimeout(resolve, Math.random() * 20 + 5)
+      );
+      
+      readsInProgress--;
+      return {
+        ...file,
+        content: `Content of ${file.path}`
+      };
+    };
+    
+    const result = await TacitPromise.begin(files)
+      .map(simulateFileRead, { concurrency: 10 })
+      .getValue();
+    
+    expect(result).toHaveLength(50);
+    expect(maxReads).toBeLessThanOrEqual(10);
+    expect(maxReads).toBeGreaterThanOrEqual(1);
+    expect(result[0].content).toBe('Content of /file0.txt');
+    expect(result[49].content).toBe('Content of /file49.txt');
+  });
 });
 
 describe('TacitPromise - focus', () => {
@@ -594,7 +759,7 @@ describe('TacitPromise - focus', () => {
   it('should allow chaining after focus', async () => {
     const result = await TacitPromise.create({ count: 5 })
       .focus('count')
-      .map(x => x * 2)
+      .then(x => x * 2)
       .getValue();
 
     expect(result).toBe(10);
@@ -619,7 +784,7 @@ describe('TacitPromise - focus', () => {
       filename: 'test.txt' 
     })
       .focus('root')
-      .map(root => `${root}/data`)
+      .then(root => `${root}/data`)
       .then((path, ctx) => `${path}/${ctx.filename}`)
       .getValue();
 
@@ -648,7 +813,7 @@ describe('TacitPromise - focus', () => {
 });
 
 describe('TacitPromise - integration tests', () => {
-  it('should combine tap, filter, and mapcar', async () => {
+  it('should combine tap, filter, and map', async () => {
     interface FileContext {
       totalFiles?: any;
       filteredCount?: any;
@@ -659,7 +824,7 @@ describe('TacitPromise - integration tests', () => {
       .tap('totalFiles')
       .filter((file) => file.endsWith('.js'))
       .tap('filteredCount')
-      .mapcar((file) => file.toUpperCase())
+      .map((file) => file.toUpperCase())
       .toObject();
 
     expect(context.totalFiles).toEqual(['file1.js', 'file2.txt', 'file3.js', 'file4.md']);
@@ -667,7 +832,7 @@ describe('TacitPromise - integration tests', () => {
     expect(value).toEqual(['FILE1.JS', 'FILE3.JS']);
   });
 
-  it('should use when with map for conditional side effects', async () => {
+  it('should use when with then for conditional side effects', async () => {
     const sideEffect = vi.fn();
 
     const result = await TacitPromise.create({ uppercase: true })
@@ -676,7 +841,7 @@ describe('TacitPromise - integration tests', () => {
         (_, ctx) => ctx.uppercase,
         (val) => { sideEffect(val.toUpperCase()); }
       )
-      .map((val) => `${val}!`)
+      .then((val) => `${val}!`)
       .getValue();
 
     expect(result).toBe('hello!');
@@ -696,9 +861,9 @@ describe('TacitPromise - integration tests', () => {
       .tap('rawData')
       .filter((x) => x > 5)
       .tap('filtered')
-      .mapcar((x) => `item-${x}`)
+      .map((x) => `item-${x}`)
       .tap('transformed')
-      .map((arr) => arr.join(', '))
+      .then((arr) => arr.join(', '))
       .toObject();
 
     expect(context.rawData).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
@@ -745,7 +910,7 @@ describe('TacitPromise - integration tests', () => {
       codexRoot: '/tmp/codex' 
     })
       .focus('codexRoot')
-      .map(root => `${root}/codex.db`)
+      .then(root => `${root}/codex.db`)
       .tap('dbPath')
       .focus('codexRoot')
       .then(() => mockFiles)
@@ -756,7 +921,7 @@ describe('TacitPromise - integration tests', () => {
         (files) => files.length > 0,
         (files, ctx) => { ctx.processedCount = files.length; }
       )
-      .mapcar((file: any) => file.name.toUpperCase())
+      .map((file: any) => file.name.toUpperCase())
       .toObject();
 
     expect(context.codexRoot).toBe('/tmp/codex');
@@ -848,7 +1013,7 @@ describe('TacitPromise - tee', () => {
   it('should pass through value unchanged', async () => {
     const result = await TacitPromise.begin(42)
       .tee('check', ['unused'], () => {})
-      .map(x => x * 2)
+      .then(x => x * 2)
       .getValue();
 
     expect(result).toBe(84);
@@ -879,7 +1044,7 @@ describe('TacitPromise - tee', () => {
     await TacitPromise.create({ multiplier: 3 })
       .then(() => 5)
       .tee('initial', null, mockLog)
-      .map(x => x * 2)
+      .then(x => x * 2)
       .tee('after-double', null, mockLog)
       .then((x, ctx) => x * ctx.multiplier)
       .tee('final', ['multiplier'], mockLog)

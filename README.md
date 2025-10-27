@@ -77,13 +77,6 @@ TacitPromise.begin(42)
   });
 ```
 
-#### `.map(fn)`
-Transform value without accessing context.
-```javascript
-TacitPromise.begin(5)
-  .map(x => x * 2)
-  .map(x => x + 10);
-```
 
 #### `.when(predicate, fn)`
 Conditionally execute a side effect. The value is always passed through unchanged.
@@ -151,7 +144,7 @@ TacitPromise.create({
   filename: 'data.txt' 
 })
   .focus('rootPath')
-  .map(root => `${root}/output`)
+  .then(root => `${root}/output`)
   .then((path, ctx) => `${path}/${ctx.filename}`)
   // Result: '/tmp/output/data.txt'
 
@@ -161,8 +154,8 @@ TacitPromise.create({
   dbName: 'codex.db' 
 })
   .focus('codexRoot')              // Focus on root path
-  .map(root => `${root}/data`)
-  .map(dir => `${dir}/codex.db`)
+  .then(root => `${root}/data`)
+  .then(dir => `${dir}/codex.db`)
   .tap('dbPath')                   // Store computed path
   .then(createDatabase)
   .focus('codexRoot')              // Shift focus back to root
@@ -234,7 +227,7 @@ TacitPromise.create({ userId: 123, requestId: 'abc', secret: 'xxx' })
 TacitPromise.create({ multiplier: 3 })
   .then(() => 5)
   .tee('start')
-  .map(x => x * 2)
+  .then(x => x * 2)
   .tee('doubled')
   .then((x, ctx) => x * ctx.multiplier)
   .tee('final', ['multiplier'])
@@ -350,49 +343,87 @@ TacitPromise.begin(['a', 'b', 'c', 'd'])
 - For sequential processing with early termination, use `.then()` with a `for` loop instead
 
 
-#### `.mapcar(fn)`
+#### `.map(fn, options?)`
 Map over array values. Supports both sync and async mapper functions. When mappers return promises, waits for all to complete.
+
+**Options:**
+- `concurrency` (optional): Maximum number of concurrent async operations. Default: unlimited (all run in parallel)
 ```javascript
 // Sync mapper
 TacitPromise.begin([1, 2, 3])
-  .mapcar(x => x * 2)
+  .map(x => x * 2)
   // [2, 4, 6]
 
-// Async mapper
+// Async mapper - unlimited parallelism (default)
 const fetchUserData = async (userId) => {
   const response = await fetch(`/api/users/${userId}`);
   return response.json();
 };
 
 TacitPromise.begin([1, 2, 3])
-  .mapcar(fetchUserData)
-  // Waits for all fetches to complete
-  // Returns array of user objects
+  .map(fetchUserData)
+  // All 3 fetches happen simultaneously
 
-// Real-world example: reading file contents
+// Async mapper - limited concurrency
+TacitPromise.begin([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+  .map(fetchUserData, { concurrency: 3 })
+  // Maximum 3 fetches at a time
+  // As each completes, next one starts
+
+// Real-world example: reading files without overwhelming filesystem
 const readFirstLine = async (fileObj) => {
   const contents = await fs.readFile(fileObj.fullPath, 'utf-8');
   const firstLine = contents.split('\n')[0];
   return { ...fileObj, firstLine };
 };
 
-TacitPromise.begin(files)
-  .mapcar(readFirstLine)
-  // All files read in parallel
-  // Returns array with firstLine added to each
+TacitPromise.begin(allFiles)  // 10,000 files
+  .map(readFirstLine, { concurrency: 100 })
+  // Only 100 files read at once
+  // Prevents file descriptor exhaustion and memory issues
+
+// Sequential processing (concurrency: 1)
+TacitPromise.begin(tasks)
+  .map(processOneAtATime, { concurrency: 1 })
+  // Processes one by one, in order
 
 // With context
-TacitPromise.create({ apiKey: 'secret' })
+TacitPromise.create({ apiKey: 'secret', timeout: 5000 })
   .then(() => [1, 2, 3])
-  .mapcar(async (id, _, ctx) => {
+  .map(async (id, _, ctx) => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), ctx.timeout);
+    
     const response = await fetch(`/api/data/${id}`, {
-      headers: { 'Authorization': ctx.apiKey }
+      headers: { 'Authorization': ctx.apiKey },
+      signal: controller.signal
     });
+    
+    clearTimeout(timeout);
     return response.json();
-  })
+  }, { concurrency: 5 })
 ```
 
-**Note:** All async operations run in parallel (via `Promise.all`). If you need sequential processing, use `.then()` with a `for` loop instead.
+**When to limit concurrency:**
+- File I/O operations (prevents file descriptor exhaustion)
+- Network requests to same host (be a good citizen, avoid rate limits)
+- Database queries (respect connection pool limits)
+- Memory-intensive operations (each operation loads large data)
+- Any operation with limited system resources
+
+**When unlimited is fine:**
+- Pure computation (no I/O, just CPU)
+- Small arrays (<100 items)
+- Fast async operations
+- Operations to different hosts/services
+
+**Performance note:** Results always maintain input order regardless of
+completion order. With concurrency limiting, operations start as previous
+ones complete (queue-based), maintaining exactly N concurrent operations
+for maximum efficiency.
+
+**Note:** All async operations run in parallel (via `Promise.all`). If you
+need sequential processing, use `.then()` with a `for` loop instead.
 
 ### Extraction Methods
 
@@ -429,7 +460,7 @@ TacitPromise.create(context).
     tap("blacklistedPaths").
 
   focus('codexRoot').
-    map(root => `${root}/codex.db`).
+    then(root => `${root}/codex.db`).
     tap("codexDBPath").
   
   when(pathExistsP, removeOldDB).
@@ -443,17 +474,17 @@ TacitPromise.create(context).
   focus('codexRoot').
     then(getAllFilesRecursively).
     filter(filesOnly).
-    mapcar(addAltPathsAsKey).
+    map(addAltPathsAsKey).
     filter(notBlacklistedP).
 
   then(log("parsing tags")).
-    mapcar(addFirstLineAsKey).
-    mapcar(addTags).
-    mapcar(addAFileID).
+    map(addFirstLineAsKey).
+    map(addTags).
+    map(addAFileID).
 
   then(log("inserting tags and files")).
-    mapcar(insertFile).
-    mapcar(insertTags).
+    map(insertFile).
+    map(insertTags).
 
   focus('db').
   then(closeDB).

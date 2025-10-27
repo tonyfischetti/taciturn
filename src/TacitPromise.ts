@@ -143,11 +143,6 @@ export class TacitPromise<T, C extends Record<string, any> = Record<string, any>
     });
   }
 
-  /* transform without context */
-  map<U>(fn: (value: T) => U): TacitPromise<U, C> {
-    return this.then((value) => fn(value));
-  }
-
   /* conditional execution */
   when(
     predicate: (value: T, ctx: C) => boolean | PromiseLike<boolean>,
@@ -181,16 +176,40 @@ export class TacitPromise<T, C extends Record<string, any> = Record<string, any>
     });
   }
   
-  /* mapcar */
-  mapcar<Item, Result>(
-    fn: (item: Item, index: number, ctx: C) => Result | PromiseLike<Result>
+  /* map */
+  map<Item, Result>(
+    fn: (item: Item, index: number, ctx: C) => Result | PromiseLike<Result>,
+    options?: { concurrency?: number }
   ): TacitPromise<Result[], C> {
     return this.then(async (value: any, ctx) => {
       if (!Array.isArray(value)) {
-        throw new Error('mapcar requires an array value');
+        throw new Error('map requires an array value');
       }
-      // Use Promise.all to wait for all async operations
-      return Promise.all(value.map((item, i) => fn(item, i, ctx)));
+      
+      // No concurrency limit - unlimited parallelism
+      if (!options?.concurrency) {
+        return Promise.all(value.map((item, i) => fn(item, i, ctx)));
+      }
+      
+      // With concurrency limit - queue-based processing
+      const limit = options.concurrency;
+      const results: Result[] = new Array(value.length);
+      let currentIndex = 0;
+      
+      async function processOne() {
+        while (currentIndex < value.length) {
+          const index = currentIndex++;
+          results[index] = await fn(value[index], index, ctx);
+        }
+      }
+      
+      // Start N workers
+      const workers = Array(Math.min(limit, value.length))
+        .fill(null)
+        .map(() => processOne());
+      
+      await Promise.all(workers);
+      return results;
     });
   }
 
