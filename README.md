@@ -5,6 +5,12 @@
 > Promises for tacit programming. Thread context through your chains without
   the ceremony.
 
+taciturn's `TacitPromise` is for sequential data pipelines with shared
+context. If you're building something like a file processor, ETL tool,
+or CLI with multiple transformation stages, it makes your code read
+like a recipe instead of juggling variables. See the "Real-world example"
+below.
+
 
 ## Installation
 
