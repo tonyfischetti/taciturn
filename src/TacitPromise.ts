@@ -154,11 +154,11 @@ export class TacitPromise<T, C extends Record<string, any> = Record<string, any>
   }
 
   /* store a value in the context */
-  tap(key: keyof C): TacitPromise<T, C> {
+  tap<K extends string>(key: K): TacitPromise<T, C & Record<K, T>> {
     return this.then((value, ctx) => {
       (ctx as any)[key] = value;
       return value;
-    });
+    }) as TacitPromise<T, C & Record<K, T>>;
   }
 
   /* conditional execution */

@@ -131,15 +131,127 @@ to propagate after cleanup.
 ### Helper Methods
 
 #### `.tap(key)`
-Store current value in context under `key`.
+Store the current value in context under the given key and pass the value through unchanged. **TypeScript benefit:** After `.tap()`, TypeScript knows the key exists in context with the correct type - no more optional properties or `!` assertions needed.
 ```javascript
+// Basic usage
 TacitPromise.begin(42)
-  .tap('original')
+  .tap('answer')
   .then((val, ctx) => {
-    console.log('Started with:', ctx.original);
+    console.log(ctx.answer);  // 42
     return val * 2;
-  });
+  })
+
+// Type-safe context building
+interface BaseContext {
+  apiKey: string;
+}
+
+TacitPromise.create({ apiKey: 'secret' })
+  .then(() => fetchUser())
+    .tap('user')  // Context now includes user: User
+  .then(() => fetchPosts())
+    .tap('posts')  // Context now includes posts: Post[]
+  .then((_, ctx) => {
+    // TypeScript knows these exist - no ! needed:
+    const user = ctx.user;      // Type: User
+    const posts = ctx.posts;    // Type: Post[]
+    const apiKey = ctx.apiKey;  // Type: string
+    
+    return posts.filter(p => p.userId === user.id);
+  })
+
+// Accumulating results through pipeline
+TacitPromise.create({ config: {...} })
+  .then(() => getProjectRoot())
+    .tap('projectRoot')
+  .then(root => `${root}/package.json`)
+    .tap('packagePath')
+  .then(readFile)
+    .tap('packageData')
+  .then((_, ctx) => {
+    // All tapped values available with full type safety
+    console.log(`Loaded ${ctx.packageData.name} from ${ctx.projectRoot}`);
+  })
+
+// Real-world example: Building database context
+interface Config {
+  debug: boolean;
+}
+
+TacitPromise.create({ debug: true })
+  .then(() => process.env.DB_PATH)
+    .tap('dbPath')
+    // Type: Config & { dbPath: string }
+  .then(openDatabase)
+    .tap('db')
+    // Type: Config & { dbPath: string, db: Database }
+  .then((db) => db.query('SELECT * FROM users'))
+    .tap('users')
+    // Type: Config & { dbPath: string, db: Database, users: User[] }
+  .then((_, ctx) => {
+    // No optional types, no ! assertions:
+    const db: Database = ctx.db;
+    const users: User[] = ctx.users;
+    const path: string = ctx.dbPath;
+    
+    return processUsers(users, db);
+  })
 ```
+
+**Type Safety Pattern:**
+
+Start with a minimal base context containing only the initial required properties:
+```javascript
+interface BaseContext {
+  debug: boolean;
+  config: AppConfig;
+}
+
+const baseContext: BaseContext = {
+  debug: false,
+  config: {...}
+};
+
+// Build up context with .tap() - types accumulate automatically
+TacitPromise.create(baseContext)
+  .then(setup)
+    .tap('setupResult')     // Adds setupResult: SetupResult
+  .then(initialize)
+    .tap('connection')      // Adds connection: Connection
+  .then(loadData)
+    .tap('data')           // Adds data: Data[]
+  // TypeScript now knows about all properties without declaring them optional
+```
+
+**Before `.tap()` type narrowing:**
+```typescript
+interface Context {
+  codexRoot?: string;  // Optional - need ! assertions
+  db?: Database;
+}
+
+const fn = (ctx: Context) => {
+  const root = ctx.codexRoot!;  // Need !
+  //                          ^
+}
+```
+
+**After `.tap()` type narrowing:**
+```typescript
+interface BaseContext {
+  debug: boolean;
+}
+
+// Properties added via .tap() are automatically in the type
+TacitPromise.create({...})
+  .then(() => '/root')
+    .tap('codexRoot')  // Adds codexRoot: string to context type
+  .then((_, ctx) => {
+    const root = ctx.codexRoot;  // No ! needed - TypeScript knows it exists
+  })
+```
+
+This makes TacitPromise pipelines fully type-safe without requiring optional properties or runtime checks.
 
 
 #### `.when(predicate, fn)`

@@ -118,6 +118,187 @@ describe('TacitPromise - tap', () => {
   });
 });
 
+describe('TacitPromise - tap with type narrowing', () => {
+  it('should add property to context type', async () => {
+    interface BaseCtx {
+      x: number;
+    }
+    
+    const { value, context } = await TacitPromise.create<BaseCtx>({ x: 1 })
+      .then(() => 'test-value')
+        .tap('stored')
+      .toObject();
+    
+    expect(value).toBe('test-value');
+    expect(context.x).toBe(1);
+    expect(context.stored).toBe('test-value');
+  });
+
+  it('should accumulate multiple properties in type', async () => {
+    interface BaseCtx {
+      initial: string;
+    }
+    
+    const { context } = await TacitPromise.create<BaseCtx>({ initial: 'start' })
+      .then(() => 42)
+        .tap('first')
+      .then(() => 'hello')
+        .tap('second')
+      .then(() => true)
+        .tap('third')
+      .toObject();
+    
+    // TypeScript knows all of these exist
+    const initial: string = context.initial;
+    const first: number = context.first;
+    const second: string = context.second;
+    const third: boolean = context.third;
+    
+    expect(initial).toBe('start');
+    expect(first).toBe(42);
+    expect(second).toBe('hello');
+    expect(third).toBe(true);
+  });
+
+  it('should allow type-safe access without assertions', async () => {
+    interface BaseCtx {
+      multiplier: number;
+    }
+    
+    const result = await TacitPromise.create<BaseCtx>({ multiplier: 3 })
+      .then(() => 10)
+        .tap('baseValue')
+      .then((_, ctx) => {
+        // No ! needed - TypeScript knows these exist
+        return ctx.baseValue * ctx.multiplier;
+      })
+      .getValue();
+    
+    expect(result).toBe(30);
+  });
+
+  it('should work with complex types', async () => {
+    interface User {
+      id: number;
+      name: string;
+    }
+    
+    interface BaseCtx {
+      apiKey: string;
+    }
+    
+    const mockUser: User = { id: 123, name: 'Alice' };
+    
+    const { context } = await TacitPromise.create<BaseCtx>({ apiKey: 'secret' })
+      .then(() => mockUser)
+        .tap('user')
+      .then(() => [1, 2, 3])
+        .tap('items')
+      .toObject();
+    
+    // TypeScript knows the exact types
+    const user: User = context.user;
+    const items: number[] = context.items;
+    
+    expect(user.name).toBe('Alice');
+    expect(items).toEqual([1, 2, 3]);
+  });
+
+  it('should maintain type safety through chain', async () => {
+    interface Config {
+      debug: boolean;
+    }
+    
+    await TacitPromise.create<Config>({ debug: true })
+      .then(() => '/tmp/file.txt')
+        .tap('filePath')
+      .then(() => ({ data: 'content' }))
+        .tap('fileData')
+      .then((_, ctx) => {
+        // All these are type-safe
+        const path: string = ctx.filePath;
+        const data: { data: string } = ctx.fileData;
+        const debug: boolean = ctx.debug;
+        
+        expect(path).toBe('/tmp/file.txt');
+        expect(data.data).toBe('content');
+        expect(debug).toBe(true);
+        
+        return 'done';
+      })
+      .getValue();
+  });
+
+  it('should work with focus after tap', async () => {
+    interface BaseCtx {
+      x: number;
+    }
+    
+    const result = await TacitPromise.create<BaseCtx>({ x: 5 })
+      .then(() => '/root/path')
+        .tap('rootPath')
+      .focus('rootPath')  // Focus on the tapped value
+      .then(path => `${path}/file.txt`)
+      .getValue();
+    
+    expect(result).toBe('/root/path/file.txt');
+  });
+
+  it('should handle nested taps', async () => {
+    interface BaseCtx {
+      stage: string;
+    }
+    
+    const { context } = await TacitPromise.create<BaseCtx>({ stage: 'init' })
+      .then(() => 1)
+        .tap('a')
+      .then((val, ctx) => val + ctx.a)
+        .tap('b')
+      .then((val, ctx) => val + ctx.b)
+        .tap('c')
+      .toObject();
+    
+    expect(context.a).toBe(1);
+    expect(context.b).toBe(2);  // 1 + 1
+    expect(context.c).toBe(4);  // 2 + 2
+  });
+
+  it('should work in realistic pipeline', async () => {
+    interface BaseCtx {
+      config: {
+        timeout: number;
+      };
+    }
+    
+    const { value, context } = await TacitPromise.create<BaseCtx>({
+      config: { timeout: 5000 }
+    })
+      .then(() => '/projects/myapp')
+        .tap('projectRoot')
+      .then(root => `${root}/data.json`)
+        .tap('dataPath')
+      .then(async (path) => {
+        // Simulate reading file
+        return { id: 1, name: 'Project' };
+      })
+        .tap('projectData')
+      .then((_, ctx) => {
+        // Type-safe access to all accumulated context
+        const root: string = ctx.projectRoot;
+        const path: string = ctx.dataPath;
+        const data: { id: number; name: string } = ctx.projectData;
+        
+        return `${data.name} at ${root}`;
+      })
+      .toObject();
+    
+    expect(value).toBe('Project at /projects/myapp');
+    expect(context.projectRoot).toBe('/projects/myapp');
+    expect(context.dataPath).toBe('/projects/myapp/data.json');
+    expect(context.projectData).toEqual({ id: 1, name: 'Project' });
+  });
+});
+
 
 describe('TacitPromise - when', () => {
   it('should pass through value even when condition is true', async () => {
